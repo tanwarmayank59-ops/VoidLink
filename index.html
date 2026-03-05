@@ -1,251 +1,166 @@
 <!DOCTYPE html>
 <html>
 <head>
-
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-
-<title>VoidLink.io</title>
-
-<script src="/socket.io/socket.io.js"></script>
-
-<style>
-
-body{
-margin:0;
-background:#050505;
-color:#00ffcc;
-font-family:monospace;
-overflow:hidden;
-}
-
-#menu{
-position:absolute;
-top:40%;
-left:50%;
-transform:translateX(-50%);
-text-align:center;
-}
-
-button{
-padding:10px;
-margin:5px;
-background:#00ffcc;
-border:none;
-cursor:pointer;
-font-weight:bold;
-}
-
-#leaderboard{
-position:absolute;
-right:10px;
-top:10px;
-background:#000;
-padding:10px;
-font-size:12px;
-}
-
-#minimap{
-position:absolute;
-left:10px;
-bottom:10px;
-width:150px;
-height:150px;
-background:#000;
-border:1px solid #00ffcc;
-}
-
-canvas{
-display:block;
-}
-
-</style>
-
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <title>VoidLink.io</title>
+    <script src="/socket.io/socket.io.js"></script>
+    <style>
+        body { margin:0; background:#050505; color:#00ffcc; font-family:monospace; overflow:hidden; }
+        #menu { position:absolute; top:40%; left:50%; transform:translateX(-50%); text-align:center; z-index: 10; }
+        button { padding:10px; margin:5px; background:#00ffcc; border:none; cursor:pointer; font-weight:bold; }
+        #leaderboard { position:absolute; right:10px; top:10px; background:rgba(0,0,0,0.7); padding:10px; font-size:12px; border:1px solid #00ffcc; }
+        #minimap { position:absolute; left:10px; bottom:10px; width:150px; height:150px; background:#000; border:1px solid #00ffcc; }
+        canvas { display:block; }
+        #roomDisplay { margin-top: 10px; font-weight: bold; }
+    </style>
 </head>
-
 <body>
 
 <div id="menu">
-
-<h2>VOIDLINK</h2>
-
-<input id="roomCode" placeholder="Room Code">
-
-<br>
-
-<button onclick="createRoom()">CREATE ROOM</button>
-<button onclick="joinRoom()">JOIN ROOM</button>
-<button onclick="quickPlay()">QUICK PLAY</button>
-
-<br><br>
-
-<a href="guide.html">HOW TO PLAY</a>
-
+    <h2>VOIDLINK</h2>
+    <input id="roomCode" placeholder="Room Code">
+    <div id="roomDisplay"></div>
+    <br>
+    <button onclick="createRoom()">CREATE ROOM</button>
+    <button onclick="joinRoom()">JOIN ROOM</button>
+    <button onclick="quickPlay()">QUICK PLAY</button>
+    <br><br>
+    <a href="guide.html" style="color:#00ffcc;">HOW TO PLAY</a>
 </div>
 
-<div id="leaderboard"></div>
-
+<div id="leaderboard"><b>Leaderboard</b></div>
 <canvas id="game"></canvas>
-<canvas id="minimap"></canvas>
+<canvas id="minimap" width="150" height="150"></canvas>
 
 <script>
+    const socket = io();
+    const canvas = document.getElementById("game");
+    const ctx = canvas.getContext("2d");
 
-const socket = io();
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
 
-const canvas=document.getElementById("game");
-const ctx=canvas.getContext("2d");
+    let players = {};
+    let bots = [];
+    let orbs = [];
+    let myId = null;
+    let MAP = 2000;
 
-canvas.width=window.innerWidth;
-canvas.height=window.innerHeight;
+    // --- Interaction Logic ---
+    function createRoom() {
+        socket.emit("createRoom"); // Matches server "createRoom"
+    }
 
-let players={};
-let bots=[];
-let orbs=[];
-let myId=null;
-let MAP=2000;
+    function joinRoom() {
+        const code = document.getElementById("roomCode").value;
+        socket.emit("join_room", code);
+    }
 
-function createRoom(){
-socket.emit("create_room");
-}
+    function quickPlay() {
+        document.getElementById("menu").style.display = "none";
+    }
 
-function joinRoom(){
-const code=document.getElementById("roomCode").value;
-socket.emit("join_room",code);
-}
+    // --- Socket Events ---
+    socket.on("connect", () => {
+        myId = socket.id;
+    });
 
-function quickPlay(){
-document.getElementById("menu").style.display="none";
-}
+    socket.on("init", (data) => {
+        players = data.players;
+        bots = data.bots;
+        orbs = data.orbs;
+        MAP = data.map;
+    });
 
-socket.on("init",(data)=>{
+    socket.on("roomCreated", (code) => {
+        document.getElementById("roomDisplay").innerText = "Room Code: " + code;
+    });
 
-players=data.players;
-bots=data.bots;
-orbs=data.orbs;
-MAP=data.map;
+    socket.on("player_move", (data) => {
+        if (players[data.id]) {
+            players[data.id].x = data.x;
+            players[data.id].y = data.y;
+            players[data.id].score = data.score;
+        } else {
+            players[data.id] = data; // Add if they don't exist
+        }
+    });
 
-});
+    socket.on("player_left", (id) => {
+        delete players[id];
+    });
 
-socket.on("connect",()=>{
-myId=socket.id;
-});
+    // --- Game Loop ---
+    canvas.addEventListener("mousemove", e => {
+        const x = e.clientX;
+        const y = e.clientY;
+        socket.emit("move", { x, y });
 
-socket.on("player_move",(data)=>{
-if(players[data.id]){
-players[data.id].x=data.x;
-players[data.id].y=data.y;
-players[data.id].score=data.score;
-}
-});
+        if (players[myId]) {
+            players[myId].x = x;
+            players[myId].y = y;
+        }
+    });
 
-socket.on("player_left",(id)=>{
-delete players[id];
-});
+    function draw() {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-canvas.addEventListener("mousemove",e=>{
+        // Draw Orbs
+        orbs.forEach(o => {
+            ctx.fillStyle = "#00ff88";
+            ctx.beginPath();
+            ctx.arc(o.x, o.y, 4, 0, Math.PI * 2);
+            ctx.fill();
+        });
 
-const x=e.clientX;
-const y=e.clientY;
+        // Draw Bots
+        bots.forEach(b => {
+            ctx.fillStyle = "#ffaa00";
+            ctx.beginPath();
+            ctx.arc(b.x, b.y, 12, 0, Math.PI * 2);
+            ctx.fill();
+        });
 
-socket.emit("move",{x,y});
+        // Draw Players
+        for (let id in players) {
+            const p = players[id];
+            ctx.fillStyle = (id === myId) ? "#00ffcc" : "#ff4444";
+            ctx.beginPath();
+            ctx.arc(p.x, p.y, 15, 0, Math.PI * 2);
+            ctx.fill();
+        }
 
-if(players[myId]){
-players[myId].x=x;
-players[myId].y=y;
-}
+        updateLeaderboard();
+        drawMinimap();
+        requestAnimationFrame(draw);
+    }
 
-});
+    function updateLeaderboard() {
+        const lb = document.getElementById("leaderboard");
+        const list = Object.values(players)
+            .sort((a, b) => (b.score || 0) - (a.score || 0))
+            .slice(0, 5);
 
-function draw(){
+        lb.innerHTML = "<b>Leaderboard</b><br>";
+        list.forEach(p => {
+            lb.innerHTML += (p.score || 0) + " - " + (p.id === myId ? "YOU" : "Player") + "<br>";
+        });
+    }
 
-ctx.clearRect(0,0,canvas.width,canvas.height);
+    function drawMinimap() {
+        const mini = document.getElementById("minimap");
+        const mctx = mini.getContext("2d");
+        mctx.clearRect(0, 0, 150, 150);
 
-orbs.forEach(o=>{
-ctx.fillStyle="#00ff88";
-ctx.beginPath();
-ctx.arc(o.x,o.y,4,0,Math.PI*2);
-ctx.fill();
-});
+        for (let id in players) {
+            const p = players[id];
+            mctx.fillStyle = (id === myId) ? "#00ffcc" : "#ff4444";
+            mctx.fillRect((p.x / MAP) * 150, (p.y / MAP) * 150, 4, 4);
+        }
+    }
 
-bots.forEach(b=>{
-ctx.fillStyle="#ffaa00";
-ctx.beginPath();
-ctx.arc(b.x,b.y,12,0,Math.PI*2);
-ctx.fill();
-});
-
-for(let id in players){
-
-const p=players[id];
-
-ctx.fillStyle=id===myId?"#00ffcc":"#ff4444";
-
-ctx.beginPath();
-ctx.arc(p.x,p.y,15,0,Math.PI*2);
-ctx.fill();
-
-}
-
-updateLeaderboard();
-drawMinimap();
-
-requestAnimationFrame(draw);
-
-}
-
-function updateLeaderboard(){
-
-const lb=document.getElementById("leaderboard");
-
-const list=Object.values(players)
-.sort((a,b)=>b.score-a.score)
-.slice(0,5);
-
-lb.innerHTML="<b>Leaderboard</b><br>";
-
-list.forEach(p=>{
-lb.innerHTML+=p.score+"<br>";
-});
-
-}
-
-function drawMinimap(){
-
-const mini=document.getElementById("minimap");
-const mctx=mini.getContext("2d");
-
-mctx.clearRect(0,0,150,150);
-
-for(let id in players){
-
-const p=players[id];
-
-mctx.fillStyle="#00ffcc";
-
-mctx.fillRect(
-p.x/MAP*150,
-p.y/MAP*150,
-3,
-3
-);
-
-}
-
-}
-
-draw();
-const socket = io();
-
-function createRoom() {
-  socket.emit("createRoom");
-}
-
-socket.on("roomCreated", (code) => {
-  document.getElementById("roomCode").innerText =
-    "Room Code: " + code;
-});
-
+    draw();
 </script>
-
 </body>
 </html>
