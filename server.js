@@ -47,3 +47,23 @@ const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => {
   console.log("Server running on port " + PORT);
 });
+const rooms = {};
+
+function generateRoomCode() {
+  return Math.random().toString(36).substring(2, 7).toUpperCase();
+}
+
+io.on("connection", (socket) => {
+
+  socket.on("createRoom", () => {
+    const code = generateRoomCode();
+
+    rooms[code] = [];
+    rooms[code].push(socket.id);
+
+    socket.join(code);
+
+    socket.emit("roomCreated", code);
+  });
+
+});

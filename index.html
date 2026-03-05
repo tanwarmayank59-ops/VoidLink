@@ -234,6 +234,16 @@ p.y/MAP*150,
 }
 
 draw();
+const socket = io();
+
+function createRoom() {
+  socket.emit("createRoom");
+}
+
+socket.on("roomCreated", (code) => {
+  document.getElementById("roomCode").innerText =
+    "Room Code: " + code;
+});
 
 </script>
 
